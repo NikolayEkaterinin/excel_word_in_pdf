@@ -7,7 +7,6 @@ from docx import Document
 import io
 import os
 
-# параметры страницы
 PAGE_WIDTH, PAGE_HEIGHT = A4
 ROWS_PER_PAGE = 40
 
@@ -16,19 +15,29 @@ def read_excel_file(file_path: str) -> pd.DataFrame:
     return pd.read_excel(file_path)
 
 def read_word_file(file_path: str) -> pd.DataFrame:
-    """Читаем Word (.docx), вытаскиваем таблицы и склеиваем в один DataFrame"""
+    """Читаем Word (.docx), вытаскиваем таблицы и параграфы"""
     doc = Document(file_path)
-    all_tables = []
+    all_parts = []
+
     for table in doc.tables:
         rows = []
         for row in table.rows:
             rows.append([cell.text.strip() for cell in row.cells])
-        df = pd.DataFrame(rows[1:], columns=rows[0]) if len(rows) > 1 else pd.DataFrame(rows)
-        all_tables.append(df)
-    if all_tables:
-        return pd.concat(all_tables, ignore_index=True)
+        if len(rows) > 1:
+            df = pd.DataFrame(rows[1:], columns=rows[0])
+        else:
+            df = pd.DataFrame(rows)
+        all_parts.append(df)
+
+    text_data = [p.text.strip() for p in doc.paragraphs if p.text.strip()]
+    if text_data:
+        df_text = pd.DataFrame(text_data, columns=["Text"])
+        all_parts.append(df_text)
+
+    if all_parts:
+        return pd.concat(all_parts, ignore_index=True, sort=False)
     else:
-        raise ValueError("В Word-документе не найдено таблиц")
+        raise ValueError("В Word-документе не найдено текста или таблиц")
 
 def build_pdf(df: pd.DataFrame, pdf_file: str):
     """Создание PDF из DataFrame с водяным знаком"""
@@ -38,7 +47,6 @@ def build_pdf(df: pd.DataFrame, pdf_file: str):
         end = start + ROWS_PER_PAGE
         chunk = df.iloc[start:end]
 
-        # строим картинку таблицы
         fig, ax = plt.subplots(figsize=(12, len(chunk) * 0.3 + 1))
         ax.axis("off")
 
@@ -58,7 +66,6 @@ def build_pdf(df: pd.DataFrame, pdf_file: str):
         plt.close(fig)
         buf.seek(0)
 
-        # вставляем таблицу в PDF
         image = ImageReader(buf)
         c.drawImage(image, 30, 100, width=PAGE_WIDTH - 60,
                     preserveAspectRatio=True, mask="auto")
